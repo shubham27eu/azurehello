@@ -1,118 +1,103 @@
-# Database Schema (Initial Outline)
+# Database Schema (Refined for Demo)
 
-This document outlines the initial proposed database schema for the Consent Management System. This schema will evolve as requirements are refined. We'll likely use an ORM like SQLAlchemy with Flask.
+This document outlines the database schema for the Consent Management System, refined for the specific demo scenarios. ORM: SQLAlchemy with Flask.
 
 ## Core Tables
 
-### 1. `users` (If managing users directly, otherwise may link to external auth)
-
+### 1. `users`
 *   `id`: INTEGER, PRIMARY KEY, AUTOINCREMENT
-*   `username`: VARCHAR(80), UNIQUE, NOT NULL (or `external_user_id` if using external auth)
-*   `email`: VARCHAR(120), UNIQUE, NOT NULL (optional, if applicable)
-*   `password_hash`: VARCHAR(255) (if storing passwords, ensure proper hashing)
+*   `username`: VARCHAR(80), UNIQUE, NOT NULL
+*   `email`: VARCHAR(120), UNIQUE, NOT NULL (optional)
+*   `password_hash`: VARCHAR(255) (ensure proper hashing)
+*   `role`: VARCHAR(50), NOT NULL (e.g., 'professor', 'student', 'employer', 'admin')
 *   `created_at`: TIMESTAMP, DEFAULT CURRENT_TIMESTAMP
 *   `updated_at`: TIMESTAMP, DEFAULT CURRENT_TIMESTAMP
 
-**Notes:** User authentication and management details need further definition. We might integrate with an existing identity provider.
+### 2. `document_types`
+*   `id`: INTEGER, PRIMARY KEY, AUTOINCREMENT
+*   `name`: VARCHAR(100), UNIQUE, NOT NULL (e.g., "Grade Sheet")
+*   `description`: TEXT (optional)
+*   `fields_definition`: JSON, NOT NULL
+    *   *Example `fields_definition` for "Grade Sheet":*
+        ```json
+        [
+          {"name": "StudentName", "type": "string", "label": "Student Name", "access": "open"},
+          {"name": "StudentID", "type": "string", "label": "Student ID", "access": "open"},
+          {"name": "CourseName", "type": "string", "label": "Course Name", "access": "open"},
+          {"name": "FinalGrade", "type": "string", "label": "Final Grade", "access": "controlled"},
+          {"name": "InstructorComments", "type": "text", "label": "Instructor Comments", "access": "controlled"}
+        ]
+        ```
+    *   *`access` can be: 'open' (publicly viewable if document is accessible), 'controlled' (requires explicit consent), 'closed' (never accessible via consent request, only by owner/uploader).*
+*   `owner_user_id`: INTEGER, FOREIGN KEY (references `users.id`), NOT NULL // User who defined/owns this type
 
-### 2. `documents`
-
+### 3. `documents`
 *   `id`: INTEGER, PRIMARY KEY, AUTOINCREMENT
 *   `uuid`: VARCHAR(36), UNIQUE, NOT NULL (for external referencing)
-*   `filename`: VARCHAR(255), NOT NULL
-*   `document_type_id`: INTEGER, FOREIGN KEY (references `document_types.id`) (nullable if type is unknown initially)
-*   `uploader_user_id`: INTEGER, FOREIGN KEY (references `users.id`) (nullable if system uploaded)
-*   `storage_path`: VARCHAR(1024) (path to raw document, e.g., S3 URL or local path)
-*   `mime_type`: VARCHAR(100)
-*   `size_bytes`: INTEGER
-*   `status`: VARCHAR(50) (e.g., 'uploaded', 'processing', 'processed', 'error')
+*   `name`: VARCHAR(255), NOT NULL (e.g., "Alice Wonderland - CS101 Grade Sheet")
+*   `document_type_id`: INTEGER, FOREIGN KEY (references `document_types.id`), NOT NULL
+*   `uploader_user_id`: INTEGER, FOREIGN KEY (references `users.id`), NOT NULL (e.g., Professor Smith who uploaded it)
+*   `data_subject_user_id`: INTEGER, FOREIGN KEY (references `users.id`), (nullable, e.g., Student Alice, if the document pertains to a specific user)
+*   `content`: JSON, NOT NULL
+    *   *Example `content` for a "Grade Sheet" instance:*
+        ```json
+        {
+          "StudentName": "Alice Wonderland",
+          "StudentID": "S12345",
+          "CourseName": "CS101 Intro to Computing",
+          "FinalGrade": "A",
+          "InstructorComments": "Excellent work on the final project!"
+        }
+        ```
+*   `status`: VARCHAR(50), DEFAULT 'active' (e.g., 'active', 'archived', 'deleted')
 *   `uploaded_at`: TIMESTAMP, DEFAULT CURRENT_TIMESTAMP
-*   `processed_at`: TIMESTAMP (nullable)
-
-### 3. `document_types`
-
-*   `id`: INTEGER, PRIMARY KEY, AUTOINCREMENT
-*   `name`: VARCHAR(100), UNIQUE, NOT NULL (e.g., "Payslip", "Utility Bill", "Invoice")
-*   `description`: TEXT (optional)
-*   `default_policy_id`: INTEGER, FOREIGN KEY (references `policies.id`) (optional, for default handling of fields)
-
-### 4. `document_fields` (Stores information about fields identified within documents)
-
-*   `id`: INTEGER, PRIMARY KEY, AUTOINCREMENT
-*   `document_id`: INTEGER, FOREIGN KEY (references `documents.id`), NOT NULL
-*   `field_name`: VARCHAR(255), NOT NULL (e.g., "employee_name", "total_amount", "account_number")
-*   `field_value_preview`: TEXT (optional, a snippet of the value for quick reference, can be sensitive)
-*   `data_classification_id`: INTEGER, FOREIGN KEY (references `data_classifications.id`) (e.g., PII, Sensitive, Public)
-*   `coordinates`: JSON (optional, location of the field in the document, e.g., bounding box)
-*   `identified_at`: TIMESTAMP, DEFAULT CURRENT_TIMESTAMP
-
-**Note:** The actual extracted values might be stored elsewhere or accessed on-demand from the raw document to avoid duplicating large amounts of data, especially sensitive data. This table focuses on the metadata about the fields.
-
-### 5. `data_classifications` (Predefined list of data sensitivity levels)
-
-*   `id`: INTEGER, PRIMARY KEY, AUTOINCREMENT
-*   `name`: VARCHAR(100), UNIQUE, NOT NULL (e.g., "Personally Identifiable Information (PII)", "Financial Data", "Medical Information", "Public")
-*   `description`: TEXT (optional)
-*   `sensitivity_level`: INTEGER (e.g., 1=Low, 5=High)
-
-### 6. `consents`
-
-*   `id`: INTEGER, PRIMARY KEY, AUTOINCREMENT
-*   `user_id`: INTEGER, FOREIGN KEY (references `users.id`), NOT NULL
-*   `document_id`: INTEGER, FOREIGN KEY (references `documents.id`) (nullable, if consent is for a document type or all documents)
-*   `document_type_id`: INTEGER, FOREIGN KEY (references `document_types.id`) (nullable, if consent is for a specific document instance)
-*   `field_name`: VARCHAR(255) (nullable, if consent is for the whole document/type, e.g., "customer_address". Could also be `document_field_id` if granularity is always per-field instance)
-*   `consent_purpose_id`: INTEGER, FOREIGN KEY (references `consent_purposes.id`), NOT NULL (e.g., "View", "Download", "Share with X")
-*   `is_granted`: BOOLEAN, NOT NULL
-*   `expires_at`: TIMESTAMP (nullable, if consent does not expire)
-*   `granted_at`: TIMESTAMP, DEFAULT CURRENT_TIMESTAMP
 *   `updated_at`: TIMESTAMP, DEFAULT CURRENT_TIMESTAMP
 
-### 7. `consent_purposes` (Defines the reasons/actions for which consent can be given)
-
+### 4. `consent_requests`
 *   `id`: INTEGER, PRIMARY KEY, AUTOINCREMENT
-*   `name`: VARCHAR(100), UNIQUE, NOT NULL (e.g., "VIEW_DATA", "PROCESS_FOR_ANALYTICS", "SHARE_WITH_PARTNER_X")
-*   `description`: TEXT (optional)
+*   `document_id`: INTEGER, FOREIGN KEY (references `documents.id`), NOT NULL
+*   `requester_user_id`: INTEGER, FOREIGN KEY (references `users.id`), NOT NULL (e.g., Potential Employer, Student B)
+*   `owner_user_id`: INTEGER, FOREIGN KEY (references `users.id`), NOT NULL (User responsible for granting consent, e.g., Student A or Professor Smith for Student A's document)
+*   `requested_fields`: JSON, NOT NULL // List of field names from `document_types.fields_definition`, e.g., `["FinalGrade", "InstructorComments"]`
+*   `purpose`: TEXT, NOT NULL (Reason for request, provided by requester)
+*   `status`: VARCHAR(50), NOT NULL, DEFAULT 'pending' (e.g., 'pending', 'approved', 'denied', 'expired_time', 'expired_count', 'revoked')
+*   `request_timestamp`: TIMESTAMP, DEFAULT CURRENT_TIMESTAMP
+*   `decision_timestamp`: TIMESTAMP (nullable, when owner approved/denied)
+*   `decider_user_id`: INTEGER, FOREIGN KEY (references `users.id`) (nullable, user who made the decision, could be `owner_user_id` or a delegate)
+*   `grant_expires_at`: TIMESTAMP (nullable, set on approval if consent is time-bound)
+*   `grant_access_count_total`: INTEGER (nullable, e.g., allow 5 views, set on approval)
+*   `grant_access_count_remaining`: INTEGER (nullable, decremented on each access if `grant_access_count_total` is set)
 
-### 8. `policies` (Rules for data handling, can be linked to document types or fields)
-
+### 5. `audit_logs`
 *   `id`: INTEGER, PRIMARY KEY, AUTOINCREMENT
-*   `name`: VARCHAR(100), UNIQUE, NOT NULL
-*   `description`: TEXT
-*   `rules`: JSON (e.g., default masking rules, access conditions for "unknown" fields)
-*   `created_at`: TIMESTAMP, DEFAULT CURRENT_TIMESTAMP
-
-### 9. `audit_logs`
-
-*   `id`: INTEGER, PRIMARY KEY, AUTOINCREMENT
-*   `user_id`: INTEGER, FOREIGN KEY (references `users.id`) (nullable for system actions)
-*   `action`: VARCHAR(255), NOT NULL (e.g., "USER_LOGIN", "DOCUMENT_UPLOAD", "CONSENT_GRANTED", "DATA_ACCESS_ATTEMPT")
-*   `target_resource_type`: VARCHAR(100) (e.g., "Document", "User", "Consent")
-*   `target_resource_id`: INTEGER (ID of the affected resource)
-*   `status`: VARCHAR(50) (e.g., "SUCCESS", "FAILURE", "PENDING")
-*   `details`: TEXT (JSON or plain text with more information)
-*   `ip_address`: VARCHAR(45) (optional)
+*   `acting_user_id`: INTEGER, FOREIGN KEY (references `users.id`) (User performing the action. Can be null for pure system actions, though a system user_id is better.)
+*   `action`: VARCHAR(255), NOT NULL (e.g., "USER_LOGIN_SUCCESS", "USER_LOGIN_FAILURE", "DOC_TYPE_CREATE", "DOC_UPLOAD", "CONSENT_REQUEST_CREATE", "CONSENT_APPROVE", "CONSENT_DENY", "CONSENT_REVOKE", "DATA_ACCESS_SUCCESS", "DATA_ACCESS_DENIED_NO_CONSENT", "DATA_ACCESS_DENIED_EXPIRED", "DATA_ACCESS_DENIED_NO_ACCESS_TO_FIELD")
+*   `target_document_id`: INTEGER, FOREIGN KEY (references `documents.id`) (nullable)
+*   `target_field_name`: VARCHAR(255) (nullable, specific field within the document)
+*   `target_user_id`: INTEGER, FOREIGN KEY (references `users.id`) (nullable, e.g., data subject of a document, or user whose consent request is being modified)
+*   `consent_request_id`: INTEGER, FOREIGN KEY (references `consent_requests.id`) (nullable)
+*   `status_outcome`: VARCHAR(50) (e.g., "SUCCESS", "FAILURE", "ATTEMPT")
+*   `details`: TEXT (JSON or plain text with more information, e.g., requester IP, error messages, old/new values)
 *   `timestamp`: TIMESTAMP, DEFAULT CURRENT_TIMESTAMP
 
-## Relationships (Summary)
+## Relationships Summary:
 
+*   `users` (1) -- (*) `document_types` (owner)
 *   `users` (1) -- (*) `documents` (uploader)
-*   `users` (1) -- (*) `consents`
-*   `users` (1) -- (*) `audit_logs` (actor)
+*   `users` (1) -- (*) `documents` (data_subject)
+*   `users` (1) -- (*) `consent_requests` (requester)
+*   `users` (1) -- (*) `consent_requests` (owner/decider)
+*   `users` (1) -- (*) `audit_logs` (acting_user, target_user)
 *   `document_types` (1) -- (*) `documents`
-*   `document_types` (1) -- (*) `consents`
-*   `document_types` (1) -- (1) `policies` (default policy)
-*   `documents` (1) -- (*) `document_fields`
-*   `documents` (1) -- (*) `consents`
-*   `data_classifications` (1) -- (*) `document_fields`
-*   `consent_purposes` (1) -- (*) `consents`
+*   `documents` (1) -- (*) `consent_requests`
+*   `documents` (1) -- (*) `audit_logs` (target_document_id)
+*   `consent_requests` (1) -- (*) `audit_logs` (consent_request_id)
 
-## Considerations for Future Development
+## Removed Tables (for Demo Simplicity):
+*   `document_fields` (field values now in `documents.content`, definitions in `document_types.fields_definition`)
+*   `data_classifications` (handled by `access` property in `document_types.fields_definition`)
+*   `consents` (active grants are `consent_requests` with `status='approved'` and valid `grant_expires_at`/`grant_access_count_remaining`)
+*   `consent_purposes` (`purpose` is free text in `consent_requests`)
+*   `policies` (core logic relies on `fields_definition.access` and explicit consent)
 
-*   **Normalization vs. Denormalization:** This is a fairly normalized schema. Depending on query patterns, some denormalization might be considered for performance.
-*   **Indexing:** Proper indexing will be crucial for query performance, especially on foreign keys and frequently queried columns (e.g., `uuid` in `documents`, `user_id` and `document_id` in `consents`).
-*   **Scalability:** For very large volumes of documents or logs, partitioning or NoSQL solutions for certain parts (like `audit_logs` or document content) might be explored.
-*   **Data Retention and Archival:** Policies for data retention and archival will need to be defined.
-*   **Flexibility for Field Definitions:** The `document_fields` table might need to be more flexible if dealing with highly unstructured or variable document types. JSON fields for `field_metadata` could be an option.
-
-This initial schema provides a foundation. It will be implemented and iterated upon using an ORM like SQLAlchemy in the Flask application. The `models.py` file will reflect these table structures.
+This refined schema is tailored for the demo scenarios, prioritizing clarity and minimizing tables while supporting the key consent workflows.Tool output for `overwrite_file_with_block`:
