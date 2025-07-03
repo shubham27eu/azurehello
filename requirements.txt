@@ -1,1 +1,9 @@
 Flask>=2.0.0
+Flask-SQLAlchemy>=2.5.0
+Flask-Migrate>=3.0.0
+Flask-JWT-Extended>=4.0.0
+python-dotenv>=0.19.0
+# psycopg2-binary # For PostgreSQL, if/when used
+# Flask-WTF # If using server-side forms with WTForms validation
+# Werkzeug security helpers for password hashing are included with Flask/Werkzeug
+# PyJWT is a dependency of Flask-JWT-Extended and will be installed automatically
