@@ -22,7 +22,7 @@ def create_app(config_class=None):
     else:
         # Default configuration if no config_class is provided
         app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your_default_secret_key')
-        app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///../instance/app.db')
+        app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///instance/app.db') # Default relative to project root
         app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
         app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'your_default_jwt_secret_key')
         # Configure JWT settings if needed, e.g., token expiration
