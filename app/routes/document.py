@@ -77,22 +77,28 @@ def list_documents_route():
 @jwt_required()
 def get_document_field_value_route(document_uuid, field_name): # Renamed
     current_user_id_str = get_jwt_identity()
-    # from app.services.data_access_control_service import DataAccessControlService # Import when ready
+    from app.services.data_access_control_service import DataAccessControlService # Import the service
+
     try:
-        # value = DataAccessControlService.get_field_value(
-        #     document_uuid=document_uuid,
-        #     field_name=field_name,
-        #     requester_user_id=int(current_user_id_str)
-        # )
-        # return jsonify({"document_uuid": document_uuid, "field_name": field_name, "value": value}), 200
-        return jsonify({"message": f"Data Access Control Service not yet implemented for field {field_name}"}), 501 # 501 Not Implemented
-    except PermissionError as e: # Custom PermissionError from DataAccessControlService
-        return jsonify({"error": "Access Denied", "reason": str(e)}), 403
-    except FileNotFoundError as e: # Custom DocumentNotFound error
-        return jsonify({"error": "Not Found", "reason": str(e)}), 404
-    except Exception as e:
+        value = DataAccessControlService.get_field_value(
+            requester_user_id=int(current_user_id_str),
+            document_uuid=document_uuid,
+            field_name=field_name
+        )
+        # Later: Audit log successful access here or within the service
+        return jsonify({"document_uuid": document_uuid, "field_name": field_name, "value": value}), 200
+    except ValueError as e: # Covers field not defined in type, or data inconsistency
         # Log e
-        return jsonify({"error": "Server Error", "reason": str(e)}), 500
+        return jsonify({"error": "Bad Request", "reason": str(e)}), 400
+    except FileNotFoundError as e: # Document not found
+        # Log e
+        return jsonify({"error": "Not Found", "reason": str(e)}), 404
+    except PermissionError as e: # Access denied by DACService (closed, no consent, etc.)
+        # Log e (especially the specific reason for denial from the service)
+        return jsonify({"error": "Access Denied", "reason": str(e)}), 403
+    except Exception as e: # Catch other unexpected errors
+        # Log e
+        return jsonify({"error": "Server Error", "reason": "An unexpected error occurred while retrieving field value."}), 500
 
 
 @doc_bp.route('/<string:document_uuid>/access-requests', methods=['POST'])

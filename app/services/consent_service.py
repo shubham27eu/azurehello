@@ -1,6 +1,7 @@
 from app import db
 from app.models import User, Document, DocumentType, ConsentRequest
 from sqlalchemy.exc import IntegrityError
+from app.services.audit_logging_service import AuditLoggingService # Import
 # from datetime import datetime, timedelta # If needed for expiry calculations
 
 class ConsentService:
@@ -81,14 +82,26 @@ class ConsentService:
         try:
             db.session.add(consent_request)
             db.session.commit()
+            AuditLoggingService.log_event(
+                action="CONSENT_REQUEST_CREATE_SUCCESS",
+                acting_user_id=requester_user_id,
+                target_document_id=document.id,
+                consent_request_id=consent_request.id,
+                status_outcome="SUCCESS",
+                details={
+                    "requested_fields": requested_fields,
+                    "purpose": purpose,
+                    "owner_user_id": owner_user_id_for_consent
+                }
+            )
             return consent_request
         except IntegrityError as e:
             db.session.rollback()
-            # Log e
+            AuditLoggingService.log_event(action="CONSENT_REQUEST_CREATE_FAILURE", acting_user_id=requester_user_id, target_document_id=document.id, status_outcome="FAILURE", details={"reason": "Database integrity error", "error": str(e)})
             raise ValueError("Database integrity error while creating consent request. This might be due to concurrent requests or data issues.")
         except Exception as e:
             db.session.rollback()
-            # Log e
+            AuditLoggingService.log_event(action="CONSENT_REQUEST_CREATE_FAILURE", acting_user_id=requester_user_id, target_document_id=document.id, status_outcome="FAILURE", details={"reason": "Unexpected error", "error": str(e)})
             raise RuntimeError(f"An unexpected error occurred while creating the consent request: {str(e)}")
 
     @staticmethod
@@ -159,9 +172,28 @@ class ConsentService:
 
         try:
             db.session.commit()
+            AuditLoggingService.log_event(
+                action=f"CONSENT_DECIDE_{decision.upper()}_SUCCESS", # e.g. CONSENT_DECIDE_APPROVED_SUCCESS
+                acting_user_id=decider_user_id,
+                consent_request_id=consent_request.id,
+                target_document_id=consent_request.document_id,
+                target_user_id=consent_request.requester_user_id, # User whose request is being decided
+                status_outcome="SUCCESS",
+                details={
+                    "decision": decision,
+                    "conditions": conditions,
+                    "original_owner_user_id": consent_request.owner_user_id
+                }
+            )
             # Here, potentially trigger a notification to the requester
             return consent_request
         except Exception as e:
             db.session.rollback()
-            # Log e
+            AuditLoggingService.log_event(
+                action=f"CONSENT_DECIDE_{decision.upper()}_FAILURE",
+                acting_user_id=decider_user_id,
+                consent_request_id=request_id,
+                status_outcome="FAILURE",
+                details={"reason": "Unexpected error during commit", "error": str(e)}
+            )
             raise RuntimeError(f"An unexpected error occurred while updating the consent request: {str(e)}")

@@ -1,6 +1,7 @@
-from app import db
+from app import db # db instance
 from app.models import User
 from flask_jwt_extended import create_access_token
+from app.services.audit_logging_service import AuditLoggingService # Import AuditLoggingService
 # from datetime import timedelta # If using token expiry configuration
 
 class AuthService:
@@ -16,6 +17,7 @@ class AuthService:
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
+        AuditLoggingService.log_event(action="USER_REGISTER_SUCCESS", acting_user_id=user.id, target_user_id=user.id, status_outcome="SUCCESS", details={"username": user.username, "role": user.role, "email": user.email})
         return user
 
     @staticmethod
@@ -24,10 +26,10 @@ class AuthService:
         if user and user.check_password(password):
             # identity for JWT sub claim should be a string
             access_token = create_access_token(identity=str(user.id))
-            # If using refresh tokens:
-            # refresh_token = create_refresh_token(identity=str(user.id))
-            # return {"access_token": access_token, "refresh_token": refresh_token, "user": user.to_dict()}
+            AuditLoggingService.log_event(action="USER_LOGIN_SUCCESS", acting_user_id=user.id, status_outcome="SUCCESS", details={"username": username})
             return {"access_token": access_token, "user": user.to_dict()}
+
+        AuditLoggingService.log_event(action="USER_LOGIN_FAILURE", status_outcome="FAILURE", details={"username_attempted": username, "reason": "Invalid credentials"})
         return None
 
     @staticmethod

@@ -1,5 +1,6 @@
 from app import db
 from app.models import DocumentType, User
+from app.services.audit_logging_service import AuditLoggingService
 
 class DocumentTypeService:
     @staticmethod
@@ -36,7 +37,21 @@ class DocumentTypeService:
         )
         db.session.add(doc_type)
         db.session.commit()
+        AuditLoggingService.log_event(
+            action="DOC_TYPE_CREATE_SUCCESS",
+            acting_user_id=owner_user_id,
+            status_outcome="SUCCESS",
+            details={"document_type_id": doc_type.id, "name": doc_type.name}
+        )
         return doc_type
+
+    # Consider adding logging for failures in create method if specific exceptions are caught.
+    # For example, if name uniqueness is violated:
+    # except IntegrityError: # or specific check before commit
+    #     db.session.rollback()
+    #     AuditLoggingService.log_event(action="DOC_TYPE_CREATE_FAILURE", acting_user_id=owner_user_id, status_outcome="FAILURE", details={"name": name, "reason": "Name already exists"})
+    #     raise ValueError("DocumentType name already exists")
+
 
     @staticmethod
     def get_by_id(dt_id):

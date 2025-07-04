@@ -1,6 +1,7 @@
 import uuid as uuid_generator
 from app import db
 from app.models import Document, DocumentType, User
+from app.services.audit_logging_service import AuditLoggingService
 
 class DocumentService:
     @staticmethod
@@ -62,7 +63,24 @@ class DocumentService:
         )
         db.session.add(new_doc)
         db.session.commit()
+        AuditLoggingService.log_event(
+            action="DOC_INGEST_SUCCESS",
+            acting_user_id=uploader_user_id,
+            target_document_id=new_doc.id,
+            status_outcome="SUCCESS",
+            details={
+                "document_uuid": new_doc.uuid,
+                "document_name": new_doc.name,
+                "document_type_id": new_doc.document_type_id,
+                "data_subject_user_id": new_doc.data_subject_user_id
+            }
+        )
         return new_doc
+
+    # Add failure logging points within create() for specific ValueErrors if desired.
+    # Example: before raising ValueError for "DocumentType not found"
+    # AuditLoggingService.log_event(action="DOC_INGEST_FAILURE", acting_user_id=uploader_user_id, status_outcome="FAILURE", details={"name": name, "reason": "DocumentType not found"})
+
 
     @staticmethod
     def get_by_uuid(doc_uuid):
