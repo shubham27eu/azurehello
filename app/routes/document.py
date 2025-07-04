@@ -106,20 +106,20 @@ def create_access_request_route(document_uuid): # Renamed
     requested_fields = data.get('requested_fields')
     purpose = data.get('purpose')
 
-    # from app.services.consent_service import ConsentService # Import when ready
+    from app.services.consent_service import ConsentService # Import the service
     try:
-        # consent_req = ConsentService.create_request(
-        #    requester_user_id=int(current_user_id_str),
-        #    document_uuid=document_uuid,
-        #    requested_fields=requested_fields,
-        #    purpose=purpose
-        # )
-        # if consent_req:
-        #    return jsonify(consent_req.to_dict()), 202 # 202 Accepted
-        # return jsonify({"message": "Failed to create access request"}), 400 # Or specific error from service
-        return jsonify({"message": f"Consent Service not yet implemented for access request to doc {document_uuid}"}), 501 # 501 Not Implemented
-    except ValueError as e:
+        consent_req = ConsentService.create_request(
+           requester_user_id=int(current_user_id_str),
+           document_uuid=document_uuid,
+           requested_fields=requested_fields,
+           purpose=purpose
+        )
+        # Assuming ConsentRequest model has a to_dict() method
+        return jsonify(consent_req.to_dict()), 202 # 202 Accepted
+    except ValueError as e: # Raised by ConsentService for validation errors
         return jsonify({"message": str(e)}), 400
-    except Exception as e:
-        # Log e
-        return jsonify({"message": f"Failed to create access request due to an unexpected error: {str(e)}"}), 500
+    except PermissionError as e: # Raised if trying to request 'closed' fields
+        return jsonify({"message": str(e)}), 403
+    except Exception as e: # Catch other unexpected errors
+        # Log e for server-side review
+        return jsonify({"message": f"Failed to create access request due to an unexpected server error."}), 500
